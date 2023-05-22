@@ -1,7 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import json
+import copy
 from pathlib import Path
+
+import torch
+import torch.nn.functional as F
+from torch.utils.data import Dataset
+from torchvision.io import read_image
 
 COLOR = {
     'Incision': 'red',
@@ -10,10 +17,83 @@ COLOR = {
     'stitch': 'green'
 }
 
-def visualize(data, image_id):
-    image_id = str(image_id)
-    image_path = Path('data/images/default')/data[image_id]['file']
-    image = mpimg.imread(image_path)
+
+class ZdoDataset(Dataset): 
+    def __init__(self, data_json_p, images_p=Path('data/images/default'), 
+                 image_size=(128, 255), img_transform=None):
+        '''Dataset instance, ima.ges path expected
+            args: 
+                - image_size: target size to which all images will be interpolated
+                - img_transform: any other transformation to be applied to images'''
+        
+        with open(data_json_p, 'r') as f:
+            data = json.load(f)
+        self.images_p = images_p
+        self.img_transform = img_transform
+        # only couple small images - all will be loaded into memory
+        self.data, self.images = interpolate_to_size(data, size=image_size)
+        # TODO: also normalize values!
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        image_id = list(self.data.keys())[idx]
+        im = self.images[image_id]
+        # TODO: only incision for now
+        return im[0], torch.tensor(self.data[image_id]['incision'])
+
+def interpolate_to_size(data, size=(128,255)):
+    '''Interpolates the image data to the provided size. 
+        Annotations are transformed accordingly.'''
+    images_interpolated = {} #interpolated image tensors
+    data_new = copy.deepcopy(data)
+    for image_id in data:
+
+        image_p = Path('data/images/default')/data[str(image_id)]['file']
+
+        im = read_image(str(image_p))
+        inter_coeff = (size[1]/im.shape[2], size[0]/im.shape[1])  # the interpolation ratio, xy switched (h,w)
+
+        im = im.unsqueeze(0)
+        im2 = F.interpolate(im, size=size) # size=(3,128,255)
+        images_interpolated[image_id] = im2
+
+        # interpolate the annotation
+        # terrible stitches resize for interpolation
+        for i, st in enumerate(data[str(image_id)]['stitches']):
+            for j,pt in enumerate(st):
+                pt = np.array(pt, dtype=float)
+                pt *= inter_coeff
+                data_new[str(image_id)]['stitches'][i][j] = list(pt)
+        for i, pt in enumerate(data[str(image_id)]['incision']):
+            pt = np.array(pt, dtype=float)
+            pt *= inter_coeff
+            data_new[str(image_id)]['incision'][i] = list(pt)
+    
+    return data_new, images_interpolated
+
+def visualize_tensor(image:torch.tensor, incision:torch.tensor):
+    image = image.permute(1,2,0)
+    fig, ax = plt.subplots()
+    ax.imshow(image)
+
+    # plot incision
+    x_coords, y_coords = zip(*incision.numpy())
+    x_coords = np.array(x_coords, dtype=float)
+    y_coords = np.array(y_coords, dtype=float)
+    ax.plot(x_coords, y_coords, color=COLOR['Incision'], linewidth=2)
+
+def visualize(data, image_id, image=None, incision=None):
+    if image is not None:
+        if type(image) == torch.Tensor:
+            if len(image.shape) == 4:
+                image = image[0].permute(1, 2, 0) # TODO: what if not batched?
+            else: print(f"nope..")
+    else:
+        image_id = str(image_id)
+        image_path = Path('data/images/default')/data[image_id]['file']
+        image = mpimg.imread(image_path)
     fig, ax = plt.subplots()
     ax.imshow(image)
     
