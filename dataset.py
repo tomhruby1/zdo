@@ -20,16 +20,16 @@ COLOR = {
 
 class ZdoDataset(Dataset): 
     def __init__(self, data_json_p, images_p=Path('data/images/default'), 
-                 image_size=(128, 255), img_transform=None):
+                 image_size=(128, 255), transform=None):
         '''Dataset instance, ima.ges path expected
             args: 
                 - image_size: target size to which all images will be interpolated
-                - img_transform: any other transformation to be applied to images'''
+                - transform: any other transformation to be applied'''
         
         with open(data_json_p, 'r') as f:
             data = json.load(f)
         self.images_p = images_p
-        self.img_transform = img_transform
+        self.transform = transform
         # only couple small images - all will be loaded into memory
         self.data, self.images = interpolate_to_size(data, size=image_size)
         # TODO: also normalize values!
@@ -41,7 +41,14 @@ class ZdoDataset(Dataset):
         image_id = list(self.data.keys())[idx]
         im = self.images[image_id]
         # TODO: only incision for now
-        return im[0], torch.tensor(self.data[image_id]['incision'])
+        points = np.array(self.data[image_id]['incision'], dtype=float)
+        
+        if self.transform is not None:
+            transformed = self.transform(image=im, keypoints=points)
+            im = transformed['image']
+            points = transformed['keypoints']
+    
+        return torch.tensor(im).permute(2,0,1), torch.tensor(points)
 
 def interpolate_to_size(data, size=(128,255)):
     '''Interpolates the image data to the provided size. 
@@ -57,7 +64,7 @@ def interpolate_to_size(data, size=(128,255)):
 
         im = im.unsqueeze(0)
         im2 = F.interpolate(im, size=size) # size=(3,128,255)
-        images_interpolated[image_id] = im2
+        images_interpolated[image_id] = im2[0].permute(1,2,0).numpy()
 
         # interpolate the annotation
         # terrible stitches resize for interpolation
@@ -73,7 +80,7 @@ def interpolate_to_size(data, size=(128,255)):
     
     return data_new, images_interpolated
 
-def visualize_tensor(image:torch.tensor, incision:torch.tensor):
+def visualize_tensor(image:torch.tensor, incision:torch.tensor, show_points=True):
     image = image.permute(1,2,0)
     fig, ax = plt.subplots()
     ax.imshow(image)
@@ -83,6 +90,11 @@ def visualize_tensor(image:torch.tensor, incision:torch.tensor):
     x_coords = np.array(x_coords, dtype=float)
     y_coords = np.array(y_coords, dtype=float)
     ax.plot(x_coords, y_coords, color=COLOR['Incision'], linewidth=2)
+    
+    # plot incision polyline points
+    if show_points:
+        for i in range(len(x_coords)):
+            plt.plot(x_coords[i], y_coords[i],'xc')
 
 def visualize(data, image_id, image=None, incision=None):
     if image is not None:
