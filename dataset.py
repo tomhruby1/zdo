@@ -52,12 +52,19 @@ class ZdoDataset(Dataset):
             transformed = self.transform(image=im, keypoints=points)
             im = transformed['image']
             points = transformed['keypoints']
+            # if geometrical transformation looses some points
+            if len(np.array(points).flatten()) != 32:
+                print(f"wrong number of point coordinates ({len(np.array(points).flatten())}) for image id {image_id}")
+                raise Exception("16 points needed!!")
 
         if self.normalize: # [0,255] => [-1,1]
             im = (im/128.0) - 1 # image
             points = points / (self.image_size/2) - 1
-    
-        return torch.tensor(im).permute(2,0,1), torch.tensor(points)
+        # return as float32
+        im = torch.tensor(im).permute(2,0,1).float()
+        incision_points = torch.tensor(points).float()
+
+        return im, incision_points 
     
     def get_raw_item(self, image_id):
         im = self.images[image_id]
@@ -88,10 +95,17 @@ def interpolate_to_size(data, size=(128,255)):
             for j,pt in enumerate(st):
                 pt = np.array(pt, dtype=float)
                 pt *= inter_coeff
+                # # hackfix to  ValueError: Expected x for keypoint ... to be in the range [0.0, 255], got 255.0.
+                # for c in range(len(pt)):
+                #     if pt[c] >= 255.0:
+                #         pt[c] = 255.0 - 0.01
                 data_new[str(image_id)]['stitches'][i][j] = list(pt)
         for i, pt in enumerate(data[str(image_id)]['incision']):
             pt = np.array(pt, dtype=float)
             pt *= inter_coeff
+            # hackfix to  ValueError: Expected x for keypoint ... to be in the range [0.0, 255], got 255.0.
+            for c in range(len(pt)):
+                if pt[c] >= 255.0: pt[c] = 255.0 - 0.01
             data_new[str(image_id)]['incision'][i] = list(pt)
     
     return data_new, images_interpolated
