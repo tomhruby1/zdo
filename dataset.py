@@ -36,7 +36,9 @@ class ZdoDataset(Dataset):
         # only couple small images - all will be loaded into memory
         self.data, self.images = interpolate_to_size(data, size=image_size)
         self.normalize = normalize
-         
+        # in x,y shape ... h,w != x,y
+        self.image_size = np.asarray([image_size[1], image_size[0]], dtype=float) 
+
     def __len__(self):
         return len(self.data)
     
@@ -52,7 +54,8 @@ class ZdoDataset(Dataset):
             points = transformed['keypoints']
 
         if self.normalize: # [0,255] => [-1,1]
-            im = (im/128.0) - 1
+            im = (im/128.0) - 1 # image
+            points = points / (self.image_size/2) - 1
     
         return torch.tensor(im).permute(2,0,1), torch.tensor(points)
     
@@ -106,8 +109,11 @@ def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor
     if type(incision) == torch.tensor:
         incision = incision.cpu().numpy()
     x_coords, y_coords = zip(*incision)
-    x_coords = np.array(x_coords, dtype=float)
+    x_coords = np.array(x_coords, dtype=float) 
     y_coords = np.array(y_coords, dtype=float)
+    if unnormalize:
+        x_coords = (x_coords+1) * float(imsize[1])/2  
+        y_coords = (y_coords+1) * float(imsize[0])/2
     ax.plot(x_coords, y_coords, color=COLOR['Incision'], linewidth=2)
     
     # plot incision polyline points
