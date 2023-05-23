@@ -94,11 +94,11 @@ def interpolate_to_size(data, size=(128,255)):
     return data_new, images_interpolated
 
 def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor, np.ndarray], 
-              show_points=True, unnormalize=False):
-    if type(image) == torch.tensor:
-        image = image.permute(1,2,0)    
+              show_points=True, unnormalize=False, imsize=(128, 255)):
+    if type(image) == torch.Tensor:
+        image = image.permute(1,2,0).numpy()
     if unnormalize:
-        image = (image * 128.0 + 128.0).int()  #(image * np.array([255,255,255]) + np.array([255,255,255]))
+        image = (image * 128.0 + 128.0).astype(int)  #(image * np.array([255,255,255]) + np.array([255,255,255]))
     fig, ax = plt.subplots()
     ax.imshow(image)
 
