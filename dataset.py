@@ -4,6 +4,7 @@ import matplotlib.image as mpimg
 import json
 import copy
 from pathlib import Path
+from typing import Union
 
 import torch
 import torch.nn.functional as F
@@ -17,10 +18,12 @@ COLOR = {
     'stitch': 'green'
 }
 
+MEAN = np.array([166.25210137, 128.91363988, 131.47121054])
+STD = np.array([47.85307378, 43.52442252, 44.18917168])
 
 class ZdoDataset(Dataset): 
     def __init__(self, data_json_p, images_p=Path('data/images/default'), 
-                 image_size=(128, 255), transform=None):
+                 image_size=(128, 255), transform=None, normalize=True):
         '''Dataset instance, ima.ges path expected
             args: 
                 - image_size: target size to which all images will be interpolated
@@ -32,8 +35,8 @@ class ZdoDataset(Dataset):
         self.transform = transform
         # only couple small images - all will be loaded into memory
         self.data, self.images = interpolate_to_size(data, size=image_size)
-        # TODO: also normalize values!
-    
+        self.normalize = normalize
+         
     def __len__(self):
         return len(self.data)
     
@@ -47,8 +50,18 @@ class ZdoDataset(Dataset):
             transformed = self.transform(image=im, keypoints=points)
             im = transformed['image']
             points = transformed['keypoints']
+
+        if self.normalize: # [0,255] => [-1,1]
+            im = (im/128.0) - 1
     
         return torch.tensor(im).permute(2,0,1), torch.tensor(points)
+    
+    def get_raw_item(self, image_id):
+        im = self.images[image_id]
+        # TODO: only incision for now
+        points = np.array(self.data[image_id]['incision'], dtype=float)
+        
+        return im, np.array(points)
 
 def interpolate_to_size(data, size=(128,255)):
     '''Interpolates the image data to the provided size. 
@@ -80,13 +93,19 @@ def interpolate_to_size(data, size=(128,255)):
     
     return data_new, images_interpolated
 
-def visualize_tensor(image:torch.tensor, incision:torch.tensor, show_points=True):
-    image = image.permute(1,2,0)
+def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor, np.ndarray], 
+              show_points=True, unnormalize=False):
+    if type(image) == torch.tensor:
+        image = image.permute(1,2,0)    
+    if unnormalize:
+        image = (image * 128.0 + 128.0).int()  #(image * np.array([255,255,255]) + np.array([255,255,255]))
     fig, ax = plt.subplots()
     ax.imshow(image)
 
     # plot incision
-    x_coords, y_coords = zip(*incision.numpy())
+    if type(incision) == torch.tensor:
+        incision = incision.cpu().numpy()
+    x_coords, y_coords = zip(*incision)
     x_coords = np.array(x_coords, dtype=float)
     y_coords = np.array(y_coords, dtype=float)
     ax.plot(x_coords, y_coords, color=COLOR['Incision'], linewidth=2)
@@ -96,7 +115,7 @@ def visualize_tensor(image:torch.tensor, incision:torch.tensor, show_points=True
         for i in range(len(x_coords)):
             plt.plot(x_coords[i], y_coords[i],'xc')
 
-def visualize(data, image_id, image=None, incision=None):
+def visualize_data(data, image_id, image=None, incision=None):
     if image is not None:
         if type(image) == torch.Tensor:
             if len(image.shape) == 4:
