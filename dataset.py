@@ -23,11 +23,13 @@ STD = np.array([47.85307378, 43.52442252, 44.18917168])
 
 class ZdoDataset(Dataset): 
     def __init__(self, data_json_p, images_p=Path('data/images/default'), 
-                 image_size=(128, 255), transform=None, normalize=True):
+                 image_size=(128, 255), transform=None, normalize=True, 
+                 incision_points=-1):
         '''Dataset instance, ima.ges path expected
             args: 
                 - image_size: target size to which all images will be interpolated
-                - transform: any other transformation to be applied'''
+                - transform: any other transformation to be applied
+                - incision_points: how many incision points to actually return (2...), -1 for all 16'''
         
         with open(data_json_p, 'r') as f:
             data = json.load(f)
@@ -38,7 +40,14 @@ class ZdoDataset(Dataset):
         self.normalize = normalize
         # in x,y shape ... h,w != x,y
         self.image_size = np.asarray([image_size[1], image_size[0]], dtype=float) 
-
+        
+        self.number_of_points = incision_points
+        if incision_points > 0:
+            if incision_points % 2 == 0:
+                self.number_of_points = incision_points // 2   # to be selected from start and end
+            else: 
+                raise Exception(f"incision_points must be divisible by 2: {incision_points} provided")
+            
     def __len__(self):
         return len(self.data)
     
@@ -53,9 +62,10 @@ class ZdoDataset(Dataset):
             im = transformed['image']
             points = transformed['keypoints']
             # if geometrical transformation looses some points
-            if len(np.array(points).flatten()) != 32:
-                print(f"wrong number of point coordinates ({len(np.array(points).flatten())}) for image id {image_id}")
-                raise Exception("16 points needed!!")
+            if self.number_of_points is None:
+                if len(np.array(points).flatten()) != 32:
+                    print(f"wrong number of point coordinates ({len(np.array(points).flatten())}) for image id {image_id}")
+                    raise Exception("16 points needed!!")
 
         if self.normalize: # [0,255] => [-1,1]
             im = (im/128.0) - 1 # image
@@ -64,6 +74,11 @@ class ZdoDataset(Dataset):
         im = torch.tensor(im).permute(2,0,1).float()
         incision_points = torch.tensor(points).float()
 
+        if self.number_of_points > 0: 
+            start = incision_points[:self.number_of_points, :]
+            end = incision_points[-self.number_of_points:, :]
+            incision_points = torch.cat([start,end])
+            
         return im, incision_points 
     
     def get_raw_item(self, image_id):
