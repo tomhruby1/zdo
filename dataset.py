@@ -21,6 +21,8 @@ COLOR = {
 MEAN = np.array([166.25210137, 128.91363988, 131.47121054])
 STD = np.array([47.85307378, 43.52442252, 44.18917168])
 
+MAX_STITCHES = 16
+
 class ZdoDataset(Dataset): 
     def __init__(self, data_json_p, images_p=Path('data/images/default'), 
                  image_size=(128, 255), transform=None, normalize=True, 
@@ -46,40 +48,68 @@ class ZdoDataset(Dataset):
             if incision_points % 2 == 0:
                 self.number_of_points = incision_points // 2   # to be selected from start and end
             else: 
-                raise Exception(f"incision_points must be divisible by 2: {incision_points} provided")
+                raise Exception(f"incision_points must be divisible by 2: {incision_points} provided")  
+        
+        self.points = {}
+        self.stitches_labels = {}
+        # process all points (incision + stitches and store into one array)
+        for image_id in self.data:
+            incision_points = np.array(self.data[image_id]['incision'], dtype=float)
+            stitches_points = np.array(self.data[image_id]['stitches'], dtype=float)
             
+            stitches_labels = np.zeros(MAX_STITCHES)
+             # init with random vals around the center
+            stitches_points2 = np.random.rand(MAX_STITCHES, 2, 2) * 10
+            N = len(stitches_points)
+            if N > 0:
+                for i in range(MAX_STITCHES):
+                    stitches_points2[i] += np.array([[12*(i+1), 30], [12*(i+1), 80]])
+            
+            # distribute N stitches randomly through the final fixed sized stitches array
+            if N > 0:
+                indices = np.arange(MAX_STITCHES)
+                np.random.shuffle(indices)
+                stitches_points2[indices[:N], :] = stitches_points
+                stitches_labels[indices[:N]] = 1
+
+            stitches_points2 = stitches_points2.astype('float32')
+            stitches_points2 = stitches_points2.reshape([MAX_STITCHES*2, 2])
+
+            # save stuff
+            self.points[image_id] = np.vstack([incision_points, stitches_points2])
+            self.stitches_labels[image_id] = stitches_labels
+
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, idx):
         image_id = list(self.data.keys())[idx]
         im = self.images[image_id]
-        # TODO: only incision for now
-        points = np.array(self.data[image_id]['incision'], dtype=float)
-        
+        points = self.points[image_id]
         if self.transform is not None:
             transformed = self.transform(image=im, keypoints=points)
             im = transformed['image']
             points = transformed['keypoints']
             # if geometrical transformation looses some points
-            if self.number_of_points is None:
-                if len(np.array(points).flatten()) != 32:
+            if self.number_of_points == -1:
+                if len(np.array(points).flatten()) != 96:
                     print(f"wrong number of point coordinates ({len(np.array(points).flatten())}) for image id {image_id}")
-                    raise Exception("16 points needed!!")
+                    raise Exception("2x16 points needed!")
 
         if self.normalize: # [0,255] => [-1,1]
             im = (im/128.0) - 1 # image
             points = points / (self.image_size/2) - 1
         # return as float32
         im = torch.tensor(im).permute(2,0,1).float()
-        incision_points = torch.tensor(points).float()
+        points = torch.tensor(points).float()
 
-        if self.number_of_points > 0: 
-            start = incision_points[:self.number_of_points, :]
-            end = incision_points[-self.number_of_points:, :]
-            incision_points = torch.cat([start,end])
+        # TODO: reimplement for all the points
+        # if self.number_of_points > 0: 
+        #     start = incision_points[:self.number_of_points, :]
+        #     end = incision_points[-self.number_of_points:, :]
+        #     incision_points = torch.cat([start,end])
             
-        return im, incision_points 
+        return im, points, torch.tensor(self.stitches_labels[image_id]).float()
     
     def get_raw_item(self, image_id):
         im = self.images[image_id]
@@ -125,7 +155,8 @@ def interpolate_to_size(data, size=(128,255)):
     
     return data_new, images_interpolated
 
-def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor, np.ndarray], 
+def visualize(image:Union[torch.Tensor, np.ndarray], incision:Union[torch.Tensor, np.ndarray],
+              stitches:Union[torch.Tensor, np.ndarray] = None, stich_objectness = None,
               show_points=True, unnormalize=False, imsize=(128, 255)):
     if type(image) == torch.Tensor:
         image = image.permute(1,2,0).numpy()
@@ -134,8 +165,9 @@ def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor
     fig, ax = plt.subplots()
     ax.imshow(image)
 
+    # print(f"image_id: {image_id}")
     # plot incision
-    if type(incision) == torch.tensor:
+    if type(incision) == torch.Tensor:
         incision = incision.cpu().numpy()
     x_coords, y_coords = zip(*incision)
     x_coords = np.array(x_coords, dtype=float) 
@@ -148,7 +180,20 @@ def visualize(image:Union[torch.tensor, np.ndarray], incision:Union[torch.tensor
     # plot incision polyline points
     if show_points:
         for i in range(len(x_coords)):
-            plt.plot(x_coords[i], y_coords[i],'xc')
+            ax.plot(x_coords[i], y_coords[i],'xc')
+
+    # plot stitches
+    if type(stitches) == torch.Tensor:    
+        stitches = stitches.cpu().numpy()
+    for i in range(0, len(stitches), 2):
+        x_coords, y_coords = zip(*stitches[i:i+2,:])
+        x_coords = np.array(x_coords, dtype=float) 
+        y_coords = np.array(y_coords, dtype=float)
+        if unnormalize:
+            x_coords = (x_coords+1) * float(imsize[1])/2  
+            y_coords = (y_coords+1) * float(imsize[0])/2
+        ax.plot(x_coords, y_coords, 'go-')
+    plt.show()
 
 def visualize_data(data, image_id, image=None, incision=None):
     if image is not None:
