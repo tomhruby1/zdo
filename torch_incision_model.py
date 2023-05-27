@@ -48,6 +48,8 @@ def load_incision_model(path):
 def run_inference(model, image):
     ''' In: image of size 128x255 
         out: 32 incision points coordinates '''
+    image = torch.tensor(image).permute(2,1,0)
+    image = nn.functional.interpolate(image, size=(128,255))
     model.eval()
     im = (image/128.0) - 1
     im2 = (im.unsqueeze(0)).to('cpu')
