@@ -32,7 +32,7 @@ class Model1(nn.Module):
         return x
 
 
-def load(path):
+def load_incision_model(path):
     '''loads .pth checkpoint file given its path'''
     checkpoint = torch.load(path)
     backbone = vgg11()
