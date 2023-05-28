@@ -30,6 +30,34 @@ class Model1(nn.Module):
         x = self.dropout(x)
         x = torch.tanh(self.fc_points_out(x))
         return x
+    
+class Model11(nn.Module):
+    def __init__(self, pretrained_model=None):
+        super().__init__()
+        if pretrained_model is not None:
+            backbone = list(pretrained_model.children())[0]
+            self.pretrained = backbone
+        else:
+            self.pretrained = nn.Conv2d(3,3)
+        self.fc1 = nn.Linear(backbone_out, 1024) # intermediate layer between predictons
+        self.fc_points_out = nn.Linear(1024, 96) # 96 coordinates for 16 incisions + 16 stitches
+        self.fc_objectness = nn.Linear(1024, 16) # 1 value / stitch
+        self.objectness_activation = nn.Sigmoid()
+        self.dropout = nn.Dropout(0.4)
+        # self.maxpool = nn.MaxPool2d(5, stride=2) 
+    
+    def forward(self, x):
+        x = nn.functional.relu(self.pretrained(x)) # shape (512, 4, 7) here (for (3,128,255))
+        x = torch.flatten(x, start_dim=1)
+        x = self.dropout(x)
+        x = nn.functional.relu(self.fc1(x))
+        p = torch.tanh(self.fc_points_out(x))
+        o = self.objectness_activation(self.fc_objectness(x))
+        return p, o
+    # load pretrained vgg + add its first module as conv feature backbone: 
+    # weights = VGG11_Weights.DEFAULT
+    # pretrained = vgg11(weights=weights)
+    # model = Model1(pretrained_model=pretrained)
 
 
 def load_incision_model(path):
