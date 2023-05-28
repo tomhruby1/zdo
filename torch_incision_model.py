@@ -54,6 +54,8 @@ def run_inference(model, image):
     im = (image/128.0) - 1
     im2 = (im.unsqueeze(0)).to('cpu')
     points_pred = model(im2)
+    points_pred = points_pred[0]
+    print(f"points_pred shape: {points_pred.shape}")
     points_pred = points_pred.reshape([16,2]).detach().cpu()
     points_pred += 1
     points_pred[:,0] *= (255.0 /2)
