@@ -147,7 +147,6 @@ def visualize(incision,stitches, image_name):
 
 def inverse_interpolate(data,im):
         size=(128,255)
-        print(data)
         for i in range(len(data)):
             data[i]=((data[i][0] / size[1]) * im[1],(data[i][1] / size[0]) * im[0])
         return data
@@ -164,8 +163,6 @@ def detect_stitches(image_id):
   image = io.imread(image_path)
   image=color.rgb2gray(image)
   edge_canny = skimage.feature.canny(image, sigma=0.98)
-  plt.imshow(edge_canny, cmap='gray')
-
   hough_radii = np.arange(int(edge_canny.shape[0]*0.01), int(edge_canny.shape[0]*0.06), 1)
   hough_res=hough_circle(edge_canny, hough_radii)
   accums, center_x, center_y, radii = hough_circle_peaks(hough_res, hough_radii,
@@ -191,6 +188,7 @@ def detect_stitches(image_id):
   return stitches
 
 if __name__ == "__main__":
+    visual_mode=False
     args=sys.argv
     output_file=args[1]        
     if args[2]=="-v":
@@ -209,11 +207,12 @@ if __name__ == "__main__":
       incision_array=run_inference(model, interpolated_image)
       incision_array=inverse_interpolate(incision_array,image_shape)
       
+      
       x=[]
       y=[]
       for coord in incision_array:
-        x.append(coord[1])
-        y.append(coord[0])
+        x.append(coord[0])
+        y.append(coord[1])
       
         
       incision=line_interpolate(x,y)
@@ -239,7 +238,7 @@ if __name__ == "__main__":
       crossing_positions=[]  
       for x in stitch_intersections:
         crossing_positions.append(math.sqrt((float(incision[0][0])-x[0])**2+(float(incision[0][1])-x[1])**2))
-      print(crossing_positions)
+      
 
 
       
