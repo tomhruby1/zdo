@@ -10,7 +10,7 @@ Original file is located at
 import sys
 import math
 import json
-import cv2
+# import cv2
 import random
 import numpy as np
 import matplotlib.pyplot as plt
@@ -191,14 +191,20 @@ def detect_stitches(image_id):
   return stitches
 
 if __name__ == "__main__":
-    args=sys.argv
-    output_file=args[1]
+    args = sys.argv
+
+    # debug args
+    out_file = 'out.json'
     visual_mode=True           #odstranit
-    if args[2]=="-v":
-      visual_mode=True
-      input_imgs=args[3:]
-    else:
-      input_imgs=args[2:]
+    input_imgs = ['test.jpg']
+    
+    if len(sys.argv) > 2:
+      output_file=args[1]
+      if args[2]=="-v":
+        visual_mode=True
+        input_imgs=args[3:]
+      else:
+        input_imgs=args[2:] 
     for img in input_imgs:
       
       image= read_image("test.jpg")
@@ -244,9 +250,6 @@ if __name__ == "__main__":
 
 
       
-
-        
-
       data = [
           { "filename": img,
             "incision_polyline": [[ float(incision[0][0]), float(incision[0][1])],[float(incision[1][0]),float(incision[1][1])]],

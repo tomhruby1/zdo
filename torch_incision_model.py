@@ -34,7 +34,7 @@ class Model1(nn.Module):
 
 def load_incision_model(path):
     '''loads .pth checkpoint file given its path'''
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, map_location='cpu')
     backbone = vgg11()
     backbone = list(backbone.children())[0]
     model_loaded = Model1(backbone)
@@ -48,12 +48,12 @@ def load_incision_model(path):
 def run_inference(model, image):
     ''' In: image of size 128x255 
         out: 32 incision points coordinates '''
-    image = torch.tensor(image).permute(2,1,0)
-    image = nn.functional.interpolate(image, size=(128,255))
-    model.eval()
+    # image = torch.tensor(image).permute(2,1,0)
+    # image = nn.functional.interpolate(image, size=(128,255))
+    # model.eval()
     im = (image/128.0) - 1
-    im2 = (im.unsqueeze(0)).to('cpu')
-    points_pred = model(im2)
+    # im2 = (im.unsqueeze(0)).to('cpu')
+    points_pred = model(im)
     points_pred = points_pred[0]
     print(f"points_pred shape: {points_pred.shape}")
     points_pred = points_pred.reshape([16,2]).detach().cpu()
